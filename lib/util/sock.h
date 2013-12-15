@@ -23,7 +23,7 @@ struct sock_addr ** sock_resolve(const char *);
  * Create a socket, set SO_REUSEADDR, bind it to the socket address ${sa},
  * mark it for listening, and mark it as non-blocking.
  */
-int sock_listener(const struct sock_addr *);
+int sock_listener(const struct sock_addr *, char *);
 
 /**
  * sock_connect(sas):

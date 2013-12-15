@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <unistd.h>
+#include <sched.h>
 
 #include "imalloc.h"
 #include "warnp.h"
@@ -308,11 +309,32 @@ err0:
  * mark it for listening, and mark it as non-blocking.
  */
 int
-sock_listener(const struct sock_addr * sa)
+sock_listener(const struct sock_addr * sa, char * bind_ns_path)
 {
 	int s;
 	int val = 1;
+	int fd;
+	int cur_fd;
+	/* if set, bind to that namespace */
+	if (bind_ns_path != NULL) {
+		/* save existing namespace so we can switch back to it at the end */
+		cur_fd = open("/proc/self/ns/net", O_RDONLY);
+		if (cur_fd < 0) {
+			warnp("open(%s) failed", bind_ns_path);
+			goto err0;
+		}
 
+		fd = open(bind_ns_path, O_RDONLY);
+		if (fd < 0) {
+			warnp("open(%s) failed", bind_ns_path);
+			goto err0;
+		}
+		if(setns(fd, 0)) {
+			warnp("setns(%d), cloned from %s", fd, bind_ns_path);
+			goto err0;
+		}
+		close(fd);
+	}
 	/* Create a socket. */
 	if ((s = socket(sa->ai_family, sa->ai_socktype, 0)) == -1) {
 		warnp("socket(%d, %d)", sa->ai_family, sa->ai_socktype);
@@ -341,6 +363,14 @@ sock_listener(const struct sock_addr * sa)
 	if (fcntl(s, F_SETFL, O_NONBLOCK) == -1) {
 		warnp("error marking socket as non-blocking");
 		goto err1;
+	}
+	/* now jump back to existing ns */
+	if (bind_ns_path != NULL) {
+		if(setns(cur_fd, 0)) {
+			warnp("setns(%d), cloned from %s", fd, bind_ns_path);
+			goto err0;
+		}
+		close(cur_fd);
 	}
 
 	/* Success! */

@@ -21,6 +21,7 @@ usage(void)
 	    "-t <target socket> -k <key file>\n"
 	    "    [-DfFj] [-n <max # connections>] "
 	    "[-o <connection timeout>] [-p <pidfile>]\n"
+	    "[-b <pid of network namespace to bind to>]\n"
 	    "    [{-r <rtime> | -R}]\n");
 	exit(1);
 }
@@ -49,18 +50,20 @@ main(int argc, char * argv[])
 	int opt_R = 0;
 	const char * opt_s = NULL;
 	const char * opt_t = NULL;
+	char * opt_b = NULL;
 
 	/* Working variables. */
 	struct sock_addr ** sas_s;
 	struct sock_addr ** sas_t;
 	struct proto_secret * K;
+	int bind_fd;
 	int ch;
 	int s;
 
 	WARNP_INIT;
 
 	/* Parse the command line. */
-	while ((ch = getopt(argc, argv, "dDefFjk:n:o:r:Rp:s:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "dDefFjk:n:o:r:Rp:s:t:b:")) != -1) {
 		switch (ch) {
 		case 'd':
 			if (opt_d || opt_e)
@@ -142,6 +145,12 @@ main(int argc, char * argv[])
 				usage();
 			opt_t = optarg;
 			break;
+		case 'b':
+			if (opt_b)
+				usage();
+			if ((opt_b = strdup(optarg)) == NULL)
+				OPT_EPARSE(ch, optarg);
+			break;
 		default:
 			usage();
 		}
@@ -178,6 +187,13 @@ main(int argc, char * argv[])
 	/* Figure out where our pid should be written. */
 	if (opt_p == NULL) {
 		if (asprintf(&opt_p, "%s.pid", opt_s) == -1) {
+			warnp("asprintf");
+			exit(1);
+		}
+	}
+	/* Figure out which ns to target */
+	if (opt_b != NULL) {
+		if (asprintf(&opt_b, "/proc/%s/ns/net", opt_b) == -1) {
 			warnp("asprintf");
 			exit(1);
 		}
@@ -225,7 +241,7 @@ main(int argc, char * argv[])
 	if (sas_s[1] != NULL)
 		warn0("Listening on first of multiple addresses found for %s",
 		    opt_s);
-	if ((s = sock_listener(sas_s[0])) == -1)
+	if ((s = sock_listener(sas_s[0], opt_b)) == -1)
 		exit(1);
 
 	/* Daemonize and write pid. */
